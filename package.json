@@ -1,0 +1,10 @@
+{
+  "name": "poker-sandbox",
+  "version": "1.0.0",
+  "description": "扑克风云会 沙盘电子版 — 多组登录 / 现场交易记录 / 利润表自动结算 / 小组PK排名",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "dev": "node server.js",
+    "start": "node server.js"
+  }
+}

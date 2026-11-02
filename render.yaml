@@ -1,0 +1,14 @@
+# Render 免费部署蓝图（https://render.com）
+# 使用方法：Render 后台 → New → Blueprint → 选择本仓库 → Apply
+services:
+  - type: web
+    name: poker-sandbox
+    runtime: node
+    plan: free
+    startCommand: node server.js
+    healthCheckPath: /api/state
+    envVars:
+      - key: ADMIN_CODE
+        sync: false        # 部署时在页面填写你的管理口令（不要用默认8888）
+      - key: NODE_VERSION
+        value: "20"
