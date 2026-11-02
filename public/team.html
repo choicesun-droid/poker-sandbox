@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>小组经营台 · 扑克风云会</title>
+<link rel="stylesheet" href="common.css">
+</head>
+<body>
+<div class="topbar">
+  <div class="brand" id="teamName">小组经营台</div>
+  <div><span class="badge" id="phase"></span> <a href="index.html" style="font-size:13px">退出</a></div>
+</div>
+<div class="wrap">
+  <div class="card">
+    <div class="timer" id="timer">--:--</div>
+    <div class="stat-row" style="margin-top:10px">
+      <div class="stat"><div class="v" id="cash">-</div><div class="k">现金（金币）</div></div>
+      <div class="stat"><div class="v" id="cards">-</div><div class="k">手牌（张）</div></div>
+      <div class="stat" id="loanBox"><div class="v" id="loan">-</div><div class="k">贷款余额</div></div>
+      <div class="stat"><div class="v" id="net">-</div><div class="k">实时身家（预估）</div></div>
+    </div>
+    <div style="text-align:center;color:var(--muted);font-size:13px;margin-top:8px" id="skillInfo"></div>
+    <div style="text-align:center;font-size:14px;margin-top:6px" id="rankInfo"></div>
+  </div>
+
+  <div class="card">
+    <h3>现场交易记账（交易先记账，再操作）</h3>
+    <div class="grid2">
+      <div>
+        <div class="field"><label>采购初级</label><input type="number" id="bBasic" min="1" placeholder="张数 ×10金币"><button class="btn" onclick="buy('buy_basic')">采购</button></div>
+        <div class="field"><label>采购高级</label><input type="number" id="bAdv" min="1" placeholder="张数 ×30金币"><button class="btn" onclick="buy('buy_adv')">采购</button></div>
+        <div class="field"><label>销售</label><input type="number" id="sAmt" min="1" placeholder="收入金币"></div>
+        <div class="field"><label></label><input type="number" id="sCards" min="0" placeholder="交付卡牌张数"><input id="sOrder" placeholder="订单(选填)" style="width:110px"><button class="btn gold" onclick="sale()">确认销售</button></div>
+      </div>
+      <div>
+        <div class="field"><label>申请贷款</label><input type="number" id="loanAmt" min="1" placeholder="≤500，每轮息5%"><button class="btn" onclick="loan()">贷款</button></div>
+        <div class="field"><label>偿还贷款</label><input type="number" id="repayAmt" min="1" placeholder="本金"><button class="btn" onclick="repay()">还贷</button></div>
+        <div class="field"><label>其他收支</label>
+          <select id="oType"><option value="other_in">其他收入</option><option value="lend_back">借款返还</option><option value="service_out">服务费支出</option><option value="lend_out">放贷支出</option></select>
+          <input type="number" id="oAmt" min="1" placeholder="金额" style="width:100px">
+        </div>
+        <div class="field"><label></label><input id="oNote" placeholder="备注（如：付给红队服务费）" style="flex:1"><button class="btn" onclick="other()">记账</button></div>
+        <div class="field" id="refineRow" style="display:none"><label>深度加工</label><span style="color:var(--muted);font-size:13px" id="refineDesc"></span><button class="btn" onclick="refine()">使用技能</button></div>
+      </div>
+    </div>
+    <div id="skillHints" style="font-size:13px;color:var(--green);margin-top:6px"></div>
+    <div class="err" id="err"></div>
+  </div>
+
+  <div class="card">
+    <h3>小组收支记录表（利润表 · 自动结算）</h3>
+    <div style="overflow-x:auto"><table id="pl"></table></div>
+  </div>
+
+  <div class="card">
+    <h3>本组流水</h3>
+    <div class="log" id="log"></div>
+  </div>
+</div>
+<script src="common.js"></script>
+<script>
+const teamId = +sessionStorage.getItem('teamId'), code = sessionStorage.getItem('code');
+if (!teamId || !code) location.href = 'index.html';
+let S = null, me = null;
+const ROWS = [
+  ['sale','销售收入'],['other_in','其他收入'],['lend_back','借款返还'],['loan_in','贷款取得'],
+  ['skill','技能成本'],['buy_basic','采购初级材料'],['buy_adv','采购高级材料'],['refine','深度加工'],
+  ['service_out','服务费支出'],['lend_out','放贷支出'],['repay','还贷'],
+  ['labor','人力成本'],['warehouse','仓储成本'],['tax','税费'],['interest','利息'],['penalty','罚款'],['adjust','调整']
+];
+function hasSkill(n) { return (me.skills || []).find(s => s.name === n); }
+async function refresh() {
+  try {
+    S = await api('/api/state'); trackSkew(S);
+    me = S.teams.find(t => t.id === teamId);
+    if (!me) { location.href = 'index.html'; return; }
+    render();
+  } catch (e) {}
+}
+function render() {
+  $('#teamName').textContent = '♦ ' + me.name;
+  $('#phase').textContent = phaseName(S);
+  $('#cash').textContent = fmt(me.cash);
+  $('#cards').textContent = me.cards;
+  $('#loan').textContent = fmt(me.loan);
+  $('#loanBox').classList.toggle('neg', me.loan > 0);
+  $('#net').textContent = fmt(me.net);
+  // 技能展示 + 效果提示
+  const sk = me.skills || [];
+  $('#skillInfo').innerHTML = sk.length
+    ? '技能：' + sk.map(s => `${s.name}${s.level >= 2 ? '·升级' : ''} <span style="color:var(--muted)">(${s.desc})</span>`).join('　')
+    : '';
+  const hints = [];
+  if (hasSkill('品牌溢价')) hints.push(`品牌溢价生效中：销售收入自动额外 +${hasSkill('品牌溢价').level >= 2 ? 20 : 10}%`);
+  if (hasSkill('批量折扣')) hints.push(`批量折扣生效中：${hasSkill('批量折扣').level >= 2 ? '≥5张8折、≥10张7折' : '单一市场一次购≥10张享8折'}（自动计算）`);
+  if (hasSkill('自建仓库')) hints.push(`自建仓库生效中：仓储费每张 ${hasSkill('自建仓库').level >= 2 ? 2 : 3} 金币/轮（结算自动按此费率）`);
+  if (hasSkill('市场调研')) hints.push('市场调研：每轮可向助教多看需求卡/规律提示');
+  if (hasSkill('独特卖点')) hints.push(`独特卖点：销售可用JQK代替任意牌（隐藏牌除外），每次最多${hasSkill('独特卖点').level >= 2 ? 2 : 1}张`);
+  $('#skillHints').innerHTML = hints.map(h => '✦ ' + h).join('<br>');
+  // 深度加工按钮
+  const rf = hasSkill('深度加工');
+  $('#refineRow').style.display = rf ? 'flex' : 'none';
+  if (rf) $('#refineDesc').textContent = `任意1张牌+${rf.level >= 2 ? 5 : 10}金币 → 从任意市场抽1张（手牌数不变）`;
+  renderTimer($('#timer'), S);
+  // 排名
+  if (S.showRanking) {
+    const sorted = [...S.teams].sort((a, b) => b.net - a.net);
+    const rk = sorted.findIndex(t => t.id === teamId) + 1;
+    $('#rankInfo').innerHTML = `当前排名：<b style="color:var(--gold);font-size:20px">第 ${rk} / ${sorted.length} 名</b>`;
+  } else $('#rankInfo').textContent = '排名暂未公布';
+  renderPL(); renderLog();
+}
+function renderPL() {
+  const rounds = [1,2,3,4];
+  let html = '<tr><th style="text-align:left">记录项</th>' + rounds.map(r=>`<th>第${r}轮</th>`).join('') + '<th>合计</th></tr>';
+  const sumAt = (r, type) => me.entries.filter(e => e.round === r && e.type === type).reduce((s,e)=>s+e.amount, 0);
+  const rowsData = ROWS.map(([t,name]) => {
+    const vals = rounds.map(r => sumAt(r, t));
+    return { name, vals, total: vals.reduce((a,b)=>a+b,0), in: ['sale','other_in','lend_back','loan_in','liquidate_cards'].includes(t) };
+  });
+  // 期初/期末现金
+  const cashEnd = r => (S.config ? S.config.baseCash : 500) + me.entries.filter(e => e.round <= r).reduce((s,e)=>s+e.amount,0);
+  const base0 = S.config ? S.config.baseCash : 500;
+  const openRow = '<tr><td class="l">期初现金</td>' + rounds.map(r=>`<td>${fmt(r===1?base0:cashEnd(r-1))}</td>`).join('') + '<td>-</td></tr>';
+  const closeRow = '<tr class="total"><td class="l">期末现金</td>' + rounds.map(r=>`<td>${fmt(cashEnd(r))}</td>`).join('') + `<td>${fmt(me.cash)}</td></tr>`;
+  html += openRow;
+  for (const rd of rowsData) {
+    if (rd.vals.every(v=>v===0)) continue;
+    html += `<tr><td class="l">${rd.name}</td>` + rd.vals.map(v=>`<td class="${v>0?'pos':v<0?'neg2':''}">${v?fmt(v):''}</td>`).join('') + `<td class="${rd.total>0?'pos':rd.total<0?'neg2':''}">${rd.total?fmt(rd.total):''}</td></tr>`;
+  }
+  // 清算行
+  if (S.phase === 'finished') {
+    const liq = me.entries.filter(e=>e.type==='liquidate_cards').reduce((s,e)=>s+e.amount,0);
+    html += `<tr><td class="l">卡牌折算（清算）</td><td colspan="4" class="pos">${fmt(liq)}</td><td class="pos">${fmt(liq)}</td></tr>`;
+  }
+  html += closeRow;
+  html += `<tr class="total"><td class="l">${S.phase==='finished'?'净利润':'实时身家（现金+卡牌×10−贷款）'}</td><td colspan="5" style="color:var(--gold);font-size:16px">${fmt(me.net)} 金币</td></tr>`;
+  $('#pl').innerHTML = html;
+}
+function renderLog() {
+  const list = [...me.entries].reverse().slice(0, 60);
+  $('#log').innerHTML = list.map(e => {
+    const d = new Date(e.ts);
+    const t = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+    return `<div class="log-item"><span><span class="who">R${e.round}</span> ${e.label}${e.note?` <span style="color:var(--muted)">${e.note}</span>`:''}${e.cards?` <span style="color:var(--muted)">(${e.cards>0?'+':''}${e.cards}张)</span>`:''}</span><span class="amt ${e.amount>=0?'pos':'neg2'}">${e.amount>=0?'+':''}${fmt(e.amount)}</span><span class="time">${t}</span></div>`;
+  }).join('') || '<div style="color:var(--muted);padding:8px">暂无记录</div>';
+}
+async function post(body) {
+  showErr($('#err'), '');
+  try { await api('/api/entry', Object.assign({ teamId, code }, body)); refresh(); }
+  catch (e) { showErr($('#err'), e.message); }
+}
+function buy(type) {
+  const n = +$(type==='buy_basic'?'#bBasic':'#bAdv').value;
+  if (!n || n < 1) return showErr($('#err'), '请填写采购张数');
+  post({ type, count: n });
+}
+function sale() {
+  const amt = +$('#sAmt').value, c = +$('#sCards').value || 0;
+  if (!amt) return showErr($('#err'), '请填写销售收入金额');
+  post({ type: 'sale', amount: amt, cards: c, order: $('#sOrder').value });
+  $('#sAmt').value = ''; $('#sCards').value = ''; $('#sOrder').value = '';
+}
+function loan() { const a = +$('#loanAmt').value; if (!a) return showErr($('#err'), '请填写贷款金额'); post({ type: 'loan_in', amount: a }); $('#loanAmt').value=''; }
+function repay() { const a = +$('#repayAmt').value; if (!a) return showErr($('#err'), '请填写还贷金额'); post({ type: 'repay', amount: a }); $('#repayAmt').value=''; }
+function other() {
+  const a = +$('#oAmt').value;
+  if (!a) return showErr($('#err'), '请填写金额');
+  post({ type: $('#oType').value, amount: a, note: $('#oNote').value });
+  $('#oAmt').value=''; $('#oNote').value='';
+}
+function refine() { post({ type: 'refine' }); }
+refresh(); setInterval(refresh, 3000); setInterval(()=>{ if(S) renderTimer($('#timer'), S); }, 1000);
+</script>
+</body>
+</html>
