@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>管理端 · 扑克风云会</title>
+<link rel="stylesheet" href="common.css">
+</head>
+<body>
+<div class="topbar">
+  <div class="brand">♣ 讲师管理端</div>
+  <div><span class="badge" id="phase"></span> <a href="index.html" style="font-size:13px">退出</a> <a href="board.html" style="font-size:13px;margin-left:10px">PK大屏</a></div>
+</div>
+<div class="wrap">
+
+  <!-- 创建对局 -->
+  <div class="card" id="setupCard" style="display:none">
+    <h3>创建新对局</h3>
+    <div id="teamRows"></div>
+    <div class="field">
+      <button class="btn small" onclick="addRow()">+ 添加队伍</button>
+      <button class="btn small" onclick="fillDefault()">填入默认6队</button>
+    </div>
+    <div class="field"><label>管理口令</label><input id="adminCodeNew" placeholder="默认 8888"></div>
+    <div class="err" id="errSetup"></div>
+    <button class="btn gold" onclick="setup()">创建对局并开始第一轮</button>
+  </div>
+
+  <!-- 对局控制 -->
+  <div class="card" id="ctrlCard" style="display:none">
+    <h3>对局控制</h3>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+      <span class="badge on" id="roundBadge"></span>
+      <span class="timer" id="timer" style="font-size:28px">--:--</span>
+      <input type="number" id="timerMin" value="30" min="1" style="width:70px;background:var(--bg);border:1px solid var(--line);color:var(--text);border-radius:8px;padding:8px">
+      <button class="btn small" onclick="ctrl('timer', {minutes:+$('#timerMin').value})">开始计时</button>
+      <button class="btn small" onclick="ctrl('timerStop')">停止计时</button>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px">
+      <button class="btn gold" id="btnSettle" onclick="ctrl('settle')">结算本轮（自动扣人力/仓储/税/息）</button>
+      <button class="btn" id="btnNext" onclick="ctrl('next')">进入下一轮</button>
+      <button class="btn" id="btnBack" onclick="ctrl('backToRunning')">撤销结算</button>
+      <button class="btn danger" id="btnFinal" onclick="if(confirm('确认执行最终清算？卡牌折算+强制还贷，之后不能记账'))ctrl('finalize')">最终清算并公布排名</button>
+    </div>
+    <div style="margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <label style="font-size:14px;color:var(--muted)"><input type="checkbox" id="showRank" onchange="ctrl('showRanking',{value:this.checked})"> 向小组端公布实时排名</label>
+      <button class="btn small" onclick="exportCSV()">导出结算表 CSV</button>
+      <button class="btn small danger" onclick="resetGame()">重开对局</button>
+    </div>
+    <div class="err" id="errCtrl"></div>
+  </div>
+
+  <!-- 规则参数 -->
+  <div class="card" id="cfgCard">
+    <h3>规则参数（默认按《规则说明书2.0》，可按课件口径调整）</h3>
+    <div class="field" style="gap:14px">
+      <span><label>初始资金</label> <input type="number" id="cBaseCash" style="width:80px;background:var(--bg);border:1px solid var(--line);color:var(--text);border-radius:6px;padding:6px"></span>
+      <span><label>起手牌数</label> <input type="number" id="cBaseCards" style="width:70px;background:var(--bg);border:1px solid var(--line);color:var(--text);border-radius:6px;padding:6px"></span>
+      <span><label>初级材料</label> <input type="number" id="cPriceBasic" style="width:70px;background:var(--bg);border:1px solid var(--line);color:var(--text);border-radius:6px;padding:6px"></span>
+      <span><label>高级材料</label> <input type="number" id="cPriceAdv" style="width:70px;background:var(--bg);border:1px solid var(--line);color:var(--text);border-radius:6px;padding:6px"></span>
+      <span><label>清算牌价</label> <input type="number" id="cCardValue" style="width:70px;background:var(--bg);border:1px solid var(--line);color:var(--text);border-radius:6px;padding:6px"></span>
+    </div>
+    <div class="field" style="gap:14px">
+      <span><label>人力/人/轮</label> <input type="number" id="cLaborPer" style="width:70px;background:var(--bg);border:1px solid var(--line);color:var(--text);border-radius:6px;padding:6px"></span>
+      <span><label>仓储/张/轮</label> <input type="number" id="cWarehousePer" style="width:70px;background:var(--bg);border:1px solid var(--line);color:var(--text);border-radius:6px;padding:6px"></span>
+      <span><label>税率%</label> <input type="number" id="cTaxRate" style="width:70px;background:var(--bg);border:1px solid var(--line);color:var(--text);border-radius:6px;padding:6px"></span>
+      <span><label>利率%/轮</label> <input type="number" id="cInterestRate" style="width:70px;background:var(--bg);border:1px solid var(--line);color:var(--text);border-radius:6px;padding:6px"></span>
+      <span><label>贷款上限</label> <input type="number" id="cLoanMax" style="width:80px;background:var(--bg);border:1px solid var(--line);color:var(--text);border-radius:6px;padding:6px"></span>
+      <button class="btn small gold" onclick="saveConfig()">保存参数</button>
+    </div>
+    <div style="color:var(--muted);font-size:12px">注意：改“初始资金/起手牌数”会即时重算各组现金与手牌，建议开课前设置；成本费率、税利率从下一次结算起生效。重开对局不会重置参数。</div>
+    <div class="err" id="errCfg"></div>
+  </div>
+
+  <!-- 拍卖/技能/代记账 -->
+  <div class="card" id="entryCard" style="display:none">
+    <h3>技能拍卖 / 罚款 / 代记账</h3>
+    <div class="field">
+      <label>小队</label><select id="eTeam"></select>
+      <label>类型</label>
+      <select id="eType">
+        <option value="skill">技能成本（拍卖）</option>
+        <option value="penalty">罚款</option>
+        <option value="labor">人力成本</option>
+        <option value="warehouse">仓储成本</option>
+        <option value="tax">税费</option>
+        <option value="interest">利息</option>
+        <option value="adjust">账目调整（可负/可加牌）</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>金额</label><input type="number" id="eAmt" min="1" placeholder="金币">
+      <span id="skillPick"><label>技能</label>
+      <select id="eSkill">
+        <option value="">选择技能…</option>
+        <option>深度加工</option><option>自建仓库</option><option>品牌溢价</option>
+        <option>市场调研</option><option>批量折扣</option><option>独特卖点</option>
+      </select>
+      <select id="eSkillAction">
+        <option value="gain">拍得技能</option>
+        <option value="upgrade">升级技能</option>
+      </select></span>
+      <input id="eNote" placeholder="备注（选填）">
+      <button class="btn gold" onclick="adminEntry()">记账</button>
+    </div>
+    <div class="field" id="adjustRow" style="display:none"><label>卡牌增减</label><input type="number" id="eCards" placeholder="正加负减"><span style="color:var(--muted);font-size:13px">仅“账目调整”可用；金额填负数为给小队加钱</span></div>
+    <div class="err" id="errEntry"></div>
+  </div>
+
+  <!-- 队伍总览 -->
+  <div class="card" id="teamsCard" style="display:none">
+    <h3>队伍总览（实时）</h3>
+    <div style="overflow-x:auto"><table id="teamTable"></table></div>
+  </div>
+
+  <!-- 全场流水 -->
+  <div class="card" id="logCard" style="display:none">
+    <h3>全场交易流水</h3>
+    <div class="log" id="allLog"></div>
+  </div>
+
+  <div class="card" id="codeCard" style="display:none">
+    <h3>小队口令（发给各组）</h3>
+    <div id="codes"></div>
+  </div>
+</div>
+<script src="common.js"></script>
+<script>
+const adminCode = sessionStorage.getItem('adminCode');
+if (!adminCode) location.href = 'index.html';
+let S = null;
+const SKILLS = $('#eSkill');
+
+function addRow(name, members) {
+  const div = document.createElement('div');
+  div.className = 'field';
+  div.innerHTML = `<input placeholder="队名" value="${name||''}" class="tname" style="width:140px"><label>人数</label><input type="number" class="tmem" value="${members||6}" min="1" style="width:70px"><button class="btn small danger" onclick="this.parentElement.remove()">删</button>`;
+  $('#teamRows').appendChild(div);
+}
+function fillDefault() {
+  $('#teamRows').innerHTML = '';
+  ['红队','橙队','黄队','绿队','蓝队','紫队'].forEach(n => addRow(n, 6));
+}
+async function setup() {
+  showErr($('#errSetup'), '');
+  const names = $$('.tname').map(i => i.value).filter(v => v.trim());
+  const members = $$('.tmem').map(i => +i.value);
+  try {
+    const r = await api('/api/setup', { names, members, adminCode: $('#adminCodeNew').value.trim() || '8888' });
+    sessionStorage.setItem('adminCode', r.adminCode);
+    alert('对局已创建！请把各队口令发给对应小组（见页面底部）。');
+    location.reload();
+  } catch (e) { showErr($('#errSetup'), e.message); }
+}
+async function refresh() {
+  try {
+    S = await api('/api/admin/state', { adminCode: sessionStorage.getItem('adminCode') });
+    trackSkew({ now: Date.now() });
+    render();
+  } catch (e) {
+    if (String(e.message).includes('口令')) { location.href = 'index.html'; }
+  }
+}
+function render() {
+  const has = S.created;
+  // 规则参数（建局前后都可设置；输入框聚焦时不覆盖）
+  if (S.config) for (const [id, key] of Object.entries(CFG_FIELDS)) {
+    const el = $('#' + id);
+    if (el && document.activeElement !== el) el.value = S.config[key];
+  }
+  $('#setupCard').style.display = has ? 'none' : 'block';
+  ['ctrlCard','entryCard','teamsCard','logCard','codeCard'].forEach(id => $('#'+id).style.display = has ? 'block' : 'none');
+  if (!has) { if (!$('#teamRows').children.length) fillDefault(); return; }
+  $('#phase').textContent = phaseName(S);
+  $('#roundBadge').textContent = phaseName(S);
+  $('#btnSettle').disabled = S.phase !== 'running';
+  $('#btnNext').disabled = S.phase !== 'settled';
+  $('#btnBack').style.display = S.phase === 'settled' ? '' : 'none';
+  $('#btnFinal').disabled = S.phase === 'finished';
+  $('#showRank').checked = !!S.showRanking;
+  // 队伍选择
+  $('#eTeam').innerHTML = S.teams.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+  // 队伍总览表
+  let html = '<tr><th>小队</th><th>人数</th><th>技能</th><th>现金</th><th>手牌</th><th>贷款</th><th>实时身家</th><th>排名</th></tr>';
+  const sorted = [...S.teams].sort((a,b) => b.net - a.net);
+  for (const t of sorted) {
+    const rk = sorted.indexOf(t) + 1;
+    html += `<tr><td class="l"><b>${t.name}</b></td>
+      <td><input type="number" value="${t.members}" min="1" style="width:56px;background:var(--bg);border:1px solid var(--line);color:var(--text);border-radius:6px;padding:4px" onchange="ctrl('setMembers',{teamId:${t.id},members:+this.value})"></td>
+      <td style="font-size:13px" title="${(t.skills||[]).map(s=>s.desc).join('；')}">${(t.skills||[]).map(s=>s.name+(s.level>=2?'·升':'')).join(' / ') || '-'}</td>
+      <td>${fmt(t.cash)}</td><td>${t.cards}</td><td>${t.loan?fmt(t.loan):'-'}</td>
+      <td style="color:var(--gold);font-weight:700">${fmt(t.net)}</td><td>${rk}</td></tr>`;
+  }
+  $('#teamTable').innerHTML = html;
+  // 口令
+  $('#codes').innerHTML = S.teams.map(t => `<span class="badge" style="margin:4px;font-size:15px">${t.name}：<b style="color:var(--gold)">${t.code}</b></span>`).join('');
+  // 全场流水
+  const all = [];
+  S.teams.forEach(t => t.entries.forEach(e => all.push({ team: t.name, tid: t.id, ...e })));
+  all.sort((a,b) => b.ts - a.ts);
+  $('#allLog').innerHTML = all.slice(0, 80).map(e => {
+    const d = new Date(e.ts);
+    const tm = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`;
+    return `<div class="log-item"><span><span class="who">${e.team}</span> <span class="badge">R${e.round}</span> ${e.label}${e.note?` <span style="color:var(--muted)">${e.note}</span>`:''}</span><span class="amt ${e.amount>=0?'pos':'neg2'}">${e.amount>=0?'+':''}${fmt(e.amount)}</span><span class="time">${tm} <a href="javascript:void(0)" onclick="delEntry(${e.tid},${e.id})" style="color:var(--red);font-size:12px">删</a></span></div>`;
+  }).join('') || '<div style="color:var(--muted);padding:8px">暂无流水</div>';
+}
+async function ctrl(action, extra) {
+  showErr($('#errCtrl'), '');
+  try { await api('/api/admin/control', Object.assign({ adminCode: sessionStorage.getItem('adminCode'), action }, extra || {})); refresh(); }
+  catch (e) { showErr($('#errCtrl'), e.message); }
+}
+const CFG_FIELDS = { cBaseCash:'baseCash', cBaseCards:'baseCards', cPriceBasic:'priceBasic', cPriceAdv:'priceAdv', cCardValue:'cardValue', cLaborPer:'laborPer', cWarehousePer:'warehousePer', cTaxRate:'taxRate', cInterestRate:'interestRate', cLoanMax:'loanMax' };
+async function saveConfig() {
+  showErr($('#errCfg'), '');
+  const config = {};
+  for (const [id, key] of Object.entries(CFG_FIELDS)) config[key] = +$('#' + id).value;
+  try {
+    await api('/api/admin/control', { adminCode: sessionStorage.getItem('adminCode'), action: 'setConfig', config });
+    refresh();
+  } catch (e) { showErr($('#errCfg'), e.message); }
+}
+async function adminEntry() {
+  showErr($('#errEntry'), '');
+  const type = $('#eType').value;
+  const body = { adminCode: sessionStorage.getItem('adminCode'), teamId: +$('#eTeam').value, type,
+    amount: +$('#eAmt').value, note: $('#eNote').value };
+  if (type === 'skill') {
+    body.skillName = SKILLS.value;
+    body.skillAction = $('#eSkillAction').value;
+    if (!body.skillName) return showErr($('#errEntry'), '请选择技能');
+  }
+  if (type === 'adjust') { body.cards = +$('#eCards').value || 0; body.label = $('#eNote').value || '账目调整'; }
+  try { await api('/api/admin/entry', body); $('#eAmt').value=''; $('#eNote').value=''; refresh(); }
+  catch (e) { showErr($('#errEntry'), e.message); }
+}
+async function delEntry(tid, eid) {
+  if (!confirm('删除该条账目？现金/卡牌将自动回滚。')) return;
+  try { await api('/api/admin/deleteEntry', { adminCode: sessionStorage.getItem('adminCode'), teamId: tid, entryId: eid }); refresh(); }
+  catch (e) { alert(e.message); }
+}
+function exportCSV() { location.href = '/api/export?adminCode=' + encodeURIComponent(sessionStorage.getItem('adminCode')); }
+async function resetGame() {
+  if (!confirm('确认重开对局？所有账目将清空！')) return;
+  $('#setupCard').style.display = 'block';
+  fillDefault();
+  window._reset = true;
+}
+$('#eType').onchange = () => {
+  const t = $('#eType').value;
+  $('#skillPick').style.display = t === 'skill' ? '' : 'none';
+  $('#adjustRow').style.display = t === 'adjust' ? 'flex' : 'none';
+};
+$('#eType').onchange();
+refresh(); setInterval(refresh, 3000);
+setInterval(() => { if (S) renderTimer($('#timer'), { timerEnd: S.timerEnd }); }, 1000);
+</script>
+</body>
+</html>
