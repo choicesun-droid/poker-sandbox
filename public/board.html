@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PK大屏 · 扑克风云会</title>
+<link rel="stylesheet" href="common.css">
+<style>
+body { background: radial-gradient(ellipse at top, #1a2436, #0a0f18); }
+.board-title { text-align: center; font-size: 42px; font-weight: 900; color: var(--gold); letter-spacing: 8px; margin: 26px 0 4px; text-shadow: 0 0 24px rgba(242,193,78,.35); }
+.board-sub { text-align: center; color: var(--muted); font-size: 16px; margin-bottom: 18px; letter-spacing: 3px; }
+.big-timer { text-align: center; font-size: 84px; font-weight: 900; font-variant-numeric: tabular-nums; color: var(--gold); }
+.big-timer.over { color: var(--red); animation: blink 1s infinite; }
+@keyframes blink { 50% { opacity: .4; } }
+.board-wrap { max-width: 1200px; margin: 0 auto; padding: 0 30px 40px; }
+.champion { text-align: center; font-size: 30px; color: var(--gold); margin: 10px 0 20px; }
+.ticker { max-height: 260px; overflow: hidden; }
+</style>
+</head>
+<body>
+<div class="board-wrap">
+  <div class="board-title">♠ 扑克风云会 · 小组 PK ♥</div>
+  <div class="board-sub" id="phase">等待开局…</div>
+  <div class="big-timer" id="timer">--:--</div>
+  <div class="champion" id="champion"></div>
+  <div class="card" style="background:rgba(22,32,47,.85)">
+    <h3 id="rankTitle">实时排名</h3>
+    <div id="rank"></div>
+  </div>
+  <div class="card" style="background:rgba(22,32,47,.85)">
+    <h3>现场交易动态</h3>
+    <div class="ticker" id="ticker"></div>
+  </div>
+</div>
+<script src="common.js"></script>
+<script>
+let S = null;
+async function refresh() {
+  try { S = await api('/api/state'); trackSkew(S); render(); } catch (e) {}
+}
+function render() {
+  $('#phase').textContent = S.created ? phaseName(S) : '等待讲师创建对局…';
+  renderTimer($('#timer'), S);
+  // 排名
+  const sorted = [...(S.teams || [])].sort((a, b) => b.net - a.net);
+  const maxV = Math.max(1, ...sorted.map(t => Math.abs(t.net)));
+  const hidden = !S.showRanking && S.phase !== 'finished';
+  if (S.phase === 'finished' && sorted.length) {
+    $('#champion').textContent = `🏆 冠军：${sorted[0].name} —— 净利润 ${fmt(sorted[0].net)} 金币`;
+    $('#rankTitle').textContent = '最终排名（净利润）';
+  } else {
+    $('#champion').textContent = '';
+    $('#rankTitle').textContent = hidden ? '实时排名（讲师公布后可看金额）' : '实时排名（实时身家）';
+  }
+  $('#rank').innerHTML = sorted.map((t, i) => `
+    <div class="rank-bar-row">
+      <div class="rank-no ${i<3?'top'+(i+1):''}">${i+1}</div>
+      <div class="rank-name">${t.name}</div>
+      <div class="rank-track"><div class="rank-fill" style="width:${Math.max(2, Math.abs(t.net)/maxV*100)}%"></div></div>
+      <div class="rank-val" style="font-weight:800;color:var(--gold)">${hidden ? '???' : fmt(t.net)}</div>
+    </div>`).join('') || '<div style="color:var(--muted)">暂无队伍</div>';
+  // 流水
+  const all = [];
+  (S.teams || []).forEach(t => t.entries.forEach(e => all.push({ team: t.name, ...e })));
+  all.sort((a, b) => b.ts - a.ts);
+  $('#ticker').innerHTML = all.slice(0, 12).map(e => {
+    const d = new Date(e.ts);
+    const tm = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+    return `<div class="log-item"><span><span class="who">${e.team}</span> ${e.label}${e.note?` <span style="color:var(--muted)">${e.note}</span>`:''}</span><span class="amt ${e.amount>=0?'pos':'neg2'}">${e.amount>=0?'+':''}${fmt(e.amount)}</span><span class="time">${tm}</span></div>`;
+  }).join('') || '<div style="color:var(--muted);padding:8px">等待第一笔交易…</div>';
+}
+refresh(); setInterval(refresh, 3000);
+setInterval(() => { if (S) renderTimer($('#timer'), S); }, 500);
+</script>
+</body>
+</html>

@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>扑克风云会 · 沙盘电子版</title>
+<link rel="stylesheet" href="common.css">
+</head>
+<body>
+<div class="topbar">
+  <div class="brand">♠ 扑克风云会 <span class="sub">沙盘电子版</span></div>
+  <div class="sub" id="phase"></div>
+</div>
+<div class="wrap">
+  <div id="noGame" class="notice" style="display:none">对局尚未创建 —— 请讲师先进入「管理端」创建对局。</div>
+
+  <div class="card">
+    <h3>小组登录</h3>
+    <div class="login-teams" id="teamList"></div>
+    <div class="field" style="margin-top:14px">
+      <label>小队口令</label>
+      <input id="teamCode" type="password" inputmode="numeric" placeholder="4位数字口令">
+      <button class="btn gold" id="btnTeam">进入小组台</button>
+    </div>
+    <div class="err" id="err1"></div>
+  </div>
+
+  <div class="card">
+    <h3>讲师 / 助教入口</h3>
+    <div class="field">
+      <label>管理口令</label>
+      <input id="adminCode" type="password" placeholder="管理口令（默认8888）">
+      <button class="btn" id="btnAdmin">进入管理端</button>
+      <button class="btn" onclick="location.href='board.html'">打开PK大屏</button>
+    </div>
+    <div class="err" id="err2"></div>
+  </div>
+</div>
+<script src="common.js"></script>
+<script>
+let teams = [], selId = null;
+async function refresh() {
+  try {
+    const s = await api('/api/state');
+    $('#phase').textContent = phaseName(s);
+    $('#noGame').style.display = s.created ? 'none' : 'block';
+    teams = s.teams || [];
+    renderTeams();
+  } catch (e) {}
+}
+function renderTeams() {
+  const box = $('#teamList');
+  if (!teams.length) { box.innerHTML = '<div class="sub" style="color:var(--muted)">等待讲师创建对局…</div>'; return; }
+  box.innerHTML = teams.map(t =>
+    `<div class="team-pick ${t.id===selId?'sel':''}" data-id="${t.id}">${t.name}</div>`).join('');
+  $$('.team-pick').forEach(el => el.onclick = () => { selId = +el.dataset.id; renderTeams(); });
+}
+$('#btnTeam').onclick = async () => {
+  showErr($('#err1'), '');
+  if (!selId) return showErr($('#err1'), '请先选择你的小队');
+  const code = $('#teamCode').value.trim();
+  if (!code) return showErr($('#err1'), '请输入小队口令');
+  try {
+    await api('/api/login', { role: 'team', teamId: selId, code });
+    sessionStorage.setItem('teamId', selId);
+    sessionStorage.setItem('code', code);
+    location.href = 'team.html';
+  } catch (e) { showErr($('#err1'), e.message); }
+};
+$('#btnAdmin').onclick = async () => {
+  showErr($('#err2'), '');
+  const code = $('#adminCode').value.trim() || '8888';
+  try {
+    await api('/api/login', { role: 'admin', code });
+    sessionStorage.setItem('adminCode', code);
+    location.href = 'admin.html';
+  } catch (e) { showErr($('#err2'), e.message); }
+};
+refresh(); setInterval(refresh, 4000);
+</script>
+</body>
+</html>
